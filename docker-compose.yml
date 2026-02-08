@@ -9,6 +9,7 @@ volumes:
   filebeat-data:
   shuffle-apps:
   shuffle-files:
+  kali-data:
 
 services:
   # =====================
@@ -149,6 +150,8 @@ services:
     hostname: kali-attacker
     stdin_open: true
     tty: true
+    volumes:
+      - kali-data:/root
     networks:
       - soc-network
     command: /bin/bash
