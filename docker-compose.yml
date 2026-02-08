@@ -1,0 +1,169 @@
+version: '3.8'
+
+networks:
+  soc-network:
+    driver: bridge
+
+volumes:
+  elasticsearch-data:
+  filebeat-data:
+  shuffle-apps:
+  shuffle-files:
+
+services:
+  # =====================
+  # ELASTICSEARCH (SIEM Core)
+  # =====================
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.1
+    container_name: elasticsearch
+    hostname: elasticsearch
+    environment:
+      - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.security.enabled=false
+      - xpack.security.enrollment.enabled=false
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    networks:
+      - soc-network
+    restart: unless-stopped
+
+  # =====================
+  # KIBANA (Visualización y Dashboards)
+  # =====================
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.1
+    container_name: kibana
+    hostname: kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY=a7a6311933d3503b89bc2dbc36572c33a6c10925682e591bffcab6911c06786d
+      - XPACK_REPORTING_ENCRYPTIONKEY=a7a6311933d3503b89bc2dbc36572c33a6c10925682e591bffcab6911c06786d
+      - XPACK_SECURITY_ENCRYPTIONKEY=a7a6311933d3503b89bc2dbc36572c33a6c10925682e591bffcab6911c06786d
+    ports:
+      - "5601:5601"
+    networks:
+      - soc-network
+    depends_on:
+      - elasticsearch
+    restart: unless-stopped
+
+  # =====================
+  # FILEBEAT (Recolección de Logs)
+  # =====================
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.11.1
+    container_name: filebeat
+    hostname: filebeat
+    user: root
+    volumes:
+      - ./filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - filebeat-data:/usr/share/filebeat/data
+    command: filebeat -e -strict.perms=false
+    networks:
+      - soc-network
+    depends_on:
+      - elasticsearch
+    restart: unless-stopped
+
+  # =====================
+  # SHUFFLE (SOAR Platform)
+  # =====================
+  shuffle-backend:
+    image: ghcr.io/shuffle/shuffle-backend:latest
+    container_name: shuffle-backend
+    hostname: shuffle-backend
+    environment:
+      - SHUFFLE_OPENSEARCH_URL=http://elasticsearch:9200
+      - SHUFFLE_ELASTIC=true
+    ports:
+      - "5001:5001"
+    networks:
+      - soc-network
+    depends_on:
+      - elasticsearch
+    restart: unless-stopped
+
+  shuffle-frontend:
+    image: ghcr.io/shuffle/shuffle-frontend:latest
+    container_name: shuffle-frontend
+    hostname: shuffle-frontend
+    environment:
+      - BACKEND_HOSTNAME=shuffle-backend
+    ports:
+      - "3001:80"
+    networks:
+      - soc-network
+    depends_on:
+      - shuffle-backend
+    restart: unless-stopped
+
+  shuffle-orborus:
+    image: ghcr.io/shuffle/shuffle-orborus:latest
+    container_name: shuffle-orborus
+    hostname: shuffle-orborus
+    environment:
+      - SHUFFLE_ORBORUS_EXECUTION_TIMEOUT=600
+      - SHUFFLE_ORBORUS_DOCKER_API_VERSION=1.40
+      - SHUFFLE_BASE_URL=http://shuffle-backend:5001
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - soc-network
+    depends_on:
+      - shuffle-backend
+    restart: unless-stopped
+
+  # =====================
+  # VICTIM (SSH Server)
+  # =====================
+  victim-ssh:
+    image: linuxserver/openssh-server:latest
+    container_name: victim-ssh
+    hostname: victim-ssh
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Madrid
+      - PASSWORD_ACCESS=true
+      - USER_PASSWORD=Password123
+      - USER_NAME=testuser
+      - LOG_STDOUT=true
+    networks:
+      - soc-network
+    ports:
+      - "2222:2222"
+    restart: unless-stopped
+
+  # =====================
+  # KALI LINUX (Attacker)
+  # =====================
+  kali:
+    image: kalilinux/kali-rolling
+    container_name: kali-attacker
+    hostname: kali-attacker
+    stdin_open: true
+    tty: true
+    networks:
+      - soc-network
+    command: /bin/bash
+    restart: unless-stopped
+
+  # =====================
+  # MONITOR (Python script que conecta Elasticsearch → Shuffle)
+  # =====================
+  monitor:
+    build: ./monitor
+    container_name: alert-monitor
+    hostname: alert-monitor
+    networks:
+      - soc-network
+    depends_on:
+      - elasticsearch
+      - shuffle-backend
+    restart: unless-stopped

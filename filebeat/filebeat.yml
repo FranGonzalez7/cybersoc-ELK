@@ -1,0 +1,32 @@
+filebeat.inputs:
+  # Logs de Docker containers
+  - type: container
+    enabled: true
+    paths:
+      - '/var/lib/docker/containers/*/*.log'
+    fields:
+      log_type: docker
+
+# Configuración de salida a Elasticsearch
+output.elasticsearch:
+  hosts: ["elasticsearch:9200"]
+  index: "filebeat-%{+yyyy.MM.dd}"
+
+# Configuración del template
+setup.template.name: "filebeat"
+setup.template.pattern: "filebeat-*"
+
+# Configuración de Kibana
+setup.kibana:
+  host: "kibana:5601"
+
+# Dashboards predefinidos
+setup.dashboards.enabled: true
+
+# Procesadores
+processors:
+  - add_docker_metadata: ~
+  - add_host_metadata: ~
+
+# Logging
+logging.level: info
