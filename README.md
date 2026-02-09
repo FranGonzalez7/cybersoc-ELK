@@ -30,17 +30,17 @@ Este proyecto demuestra capacidades completas de:
 
 ```
 ┌─────────────┐      ┌──────────────┐      ┌────────────────┐
-│ Kali Linux  │─────▶│ Victim SSH   │─────▶│   Filebeat     │
+│ Kali Linux  │────▶│ Victim SSH   │─────▶│   Filebeat     │
 │  (Atacante) │      │  (Objetivo)  │      │ (Recolector)   │
 └─────────────┘      └──────────────┘      └────────┬───────┘
-                                                     │
-                                                     ▼
+                                                    │
+                                                    ▼
 ┌─────────────┐      ┌──────────────┐      ┌────────────────┐
-│   Shuffle   │◀─────│Python Monitor│◀─────│ Elasticsearch  │
+│   Shuffle   │◀────│Python Monitor│◀─────│ Elasticsearch  │
 │    (SOAR)   │      │ (Detección)  │      │     (SIEM)     │
 └─────────────┘      └──────────────┘      └────────┬───────┘
-                                                     │
-                                                     ▼
+                                                    │
+                                                    ▼
                                             ┌────────────────┐
                                             │     Kibana     │
                                             │ (Visualización)│
@@ -217,23 +217,26 @@ done
 - Notificación enviada a Shuffle
 - Caso registrado en Shuffle con severidad HIGH
 
-### Ataque 2: Fuerza Bruta Exitoso
+## Ataque 2: Conexión Fuera de Horario
+
+**Nota:** Este ataque solo generará alertas si se ejecuta **fuera del horario laboral** (antes de 09:00 o después de 14:30).
 
 ```bash
-# Primero intentos fallidos
-for i in {1..8}; do
-  sshpass -p "wrong$i" ssh -o StrictHostKeyChecking=no testuser@victim-ssh -p 2222 2>&1
+# Acceder a Kali
+docker exec -it kali-attacker bash
+
+# Ejecutar conexión SSH (fuera de horario 09:00-14:30)
+for i in {1..5}; do
+  sshpass -p "wrongpassword$i" ssh -o StrictHostKeyChecking=no testuser@victim-ssh -p 2222 2>&1
   sleep 1
 done
-
-# Luego el intento exitoso
-sshpass -p "Password123" ssh -o StrictHostKeyChecking=no testuser@victim-ssh -p 2222 "whoami && exit"
 ```
 
 **Resultado esperado:**
-- Alerta CRÍTICA en Shuffle
-- Severidad: CRITICAL
-- Recomendación de bloqueo inmediato
+- Alerta de severidad MEDIUM en Shuffle
+- Descripción: "Actividad SSH fuera del horario laboral"
+- Recomendación de verificar si es actividad autorizada
+
 
 ---
 
@@ -269,7 +272,7 @@ docker-compose logs
 docker-compose down
 ```
 
-### Detener y eliminar volúmenes (CUIDADO: borra todos los datos):
+### Detener y eliminar volúmenes:
 
 ```bash
 docker-compose down -v
@@ -290,20 +293,10 @@ docker-compose up -d --build
 
 ---
 
-## 📈 Política de Retención de Logs
-
-- **Elasticsearch**: Los logs se mantienen indefinidamente hasta que el volumen se llene
-- **Recomendación para producción**: Implementar ILM (Index Lifecycle Management) con:
-  - Hot phase: 7 días
-  - Warm phase: 30 días
-  - Cold phase: 90 días
-  - Delete: después de 365 días
-
----
 
 ## 🔒 Consideraciones de Seguridad
 
-⚠️ **IMPORTANTE**: Este proyecto es **solo para fines educativos** en entornos controlados.
+⚠️ Este proyecto es **solo para fines educativos** en entornos controlados.
 
 **Configuraciones inseguras implementadas para facilitar la demostración:**
 - Elasticsearch sin autenticación
@@ -357,31 +350,19 @@ docker-compose restart <nombre-contenedor>
 
 ---
 
-## 👥 Equipo del Proyecto
-
-- **Integrantes del equipo**: Fran González y Julián Valzacchi
-- **Fecha**: Febrero 2026
-- **Asignatura**: Incidentes de Ciberseguridad - UD4
-
----
 
 ## 📝 Licencia
 
 Este proyecto es de código abierto con fines educativos.
 
+
 ---
 
-## ✅ Checklist de Entrega
+## 👥 Equipo del Proyecto
 
-- [x] Docker-compose funcional
-- [x] Todos los servicios levantados correctamente
-- [x] Reglas de detección implementadas
-- [x] Integración Kibana → Shuffle funcionando
-- [x] Ataques de demostración preparados
-- [x] README.md completo
-- [ ] Memoria técnica
-- [ ] Playbook de respuesta
-- [ ] Demo preparada
+- **Integrantes del equipo**: Fran González y Julián Valzacchi
+- **Fecha**: Febrero 2026
+- **Asignatura**: Incidentes de Ciberseguridad - UD4
 
 ---
 
