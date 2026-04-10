@@ -381,4 +381,6 @@ Este proyecto es de código abierto con fines educativos.
 
 ![Ejemplo de alerta en Shuffle](img/shuffle.png)
 
-**Última actualización:** 08/02/2026
+---
+
+**Última actualización:** 10/04/2026
