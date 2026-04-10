@@ -1,4 +1,4 @@
-# CyberSOC Básico - Proyecto UD4
+# CyberSOC Básico
 
 ## 📋 Descripción
 
