@@ -371,4 +371,8 @@ Este proyecto es de código abierto con fines educativos.
 
 ---
 
+![Dashboard personalizado en Kibana](img/dashboard.png)
+
+![Ejemplo de alerta en Shuffle](img/shuffle.png)
+
 **Última actualización:** 08/02/2026
