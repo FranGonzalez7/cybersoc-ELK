@@ -371,7 +371,13 @@ Este proyecto es de código abierto con fines educativos.
 
 ---
 
+## 🖼️ Capturas
+
+**Dashboard personalizado en Kibana:**
+
 ![Dashboard personalizado en Kibana](img/dashboard.png)
+
+**Ejemplo de alerta en Shuffle:**
 
 ![Ejemplo de alerta en Shuffle](img/shuffle.png)
 
