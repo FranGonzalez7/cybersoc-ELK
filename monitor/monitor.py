@@ -8,20 +8,24 @@ from elasticsearch import Elasticsearch
 # Configuración
 ES_HOST = "http://elasticsearch:9200"
 SHUFFLE_WEBHOOK = "http://shuffle-backend:5001/api/v1/hooks/webhook_4050638a-30ff-4cb5-b51a-1a00ac14d914"
-CHECK_INTERVAL = 60  # Revisar cada 60 segundos
+CHECK_INTERVAL = 20  # Revisar cada 20 segundos
 ALERT_THRESHOLD = 5  # Mínimo de eventos para alertar
 TIME_WINDOW_MINUTES = 5  # Ventana de tiempo
+COOLDOWN_MINUTES = 5  # Tiempo mínimo entre alertas del mismo tipo
 
 # Conectar a Elasticsearch
 es = Elasticsearch([ES_HOST])
 
-# Almacenar última vez que se envió alerta
+# Almacenar última vez que se envió cada tipo de alerta
 last_alert_time = None
+last_compromised_alert_time = None
+last_outside_hours_alert_time = None
 
 print(f"[INFO] Monitor iniciado - Revisando cada {CHECK_INTERVAL} segundos")
 print(f"[INFO] Conectando a Elasticsearch: {ES_HOST}")
 print(f"[INFO] Webhook Shuffle: {SHUFFLE_WEBHOOK}")
 print(f"[INFO] Horario laboral configurado: 09:00 - 14:30")
+print(f"[INFO] Cooldown entre alertas: {COOLDOWN_MINUTES} minutos")
 
 def check_ssh_attacks():
     global last_alert_time
@@ -78,8 +82,8 @@ def check_ssh_attacks():
         
         # Si hay suficientes eventos y no hemos alertado recientemente
         if hits_count >= ALERT_THRESHOLD:
-            # Evitar alertas duplicadas (cooldown de 5 minutos)
-            if last_alert_time is None or (now - last_alert_time).total_seconds() > 300:
+            # Evitar alertas duplicadas (cooldown)
+            if last_alert_time is None or (now - last_alert_time).total_seconds() > (COOLDOWN_MINUTES * 60):
                 send_alert_to_shuffle(hits_count, result['hits']['hits'])
                 last_alert_time = now
             else:
@@ -133,6 +137,7 @@ def send_alert_to_shuffle(event_count, events):
 
 def check_successful_login_after_failures():
     """Detecta logins exitosos después de intentos fallidos"""
+    global last_compromised_alert_time
     
     now = datetime.now()
     time_from = now - timedelta(minutes=10)  # Ventana de 10 minutos
@@ -166,6 +171,13 @@ def check_successful_login_after_failures():
         
         if success_result['hits']['total']['value'] > 0:
             print(f"[INFO] Detectado {success_result['hits']['total']['value']} login(s) exitoso(s)")
+            
+            # COOLDOWN: Verificar si ya enviamos alerta recientemente
+            if last_compromised_alert_time is not None:
+                seconds_since_last = (now - last_compromised_alert_time).total_seconds()
+                if seconds_since_last < (COOLDOWN_MINUTES * 60):
+                    print(f"[INFO] Alerta de cuenta comprometida ya enviada hace {int(seconds_since_last)} segundos. Esperando...")
+                    return
             
             # Para cada login exitoso, verificar si hubo fallos previos
             for hit in success_result['hits']['hits']:
@@ -204,6 +216,7 @@ def check_successful_login_after_failures():
                 
                 if failed_count >= 3:  # Si hubo 3 o más intentos fallidos antes
                     send_compromised_alert(failed_count, message, failures_result['hits']['hits'][:5])
+                    last_compromised_alert_time = now  # Actualizar cooldown
                     break  # Solo alertar una vez
     
     except Exception as e:
@@ -250,7 +263,8 @@ def send_compromised_alert(failed_attempts, success_message, failure_events):
         print(f"[ERROR] Excepción al enviar alerta: {e}")
 
 def check_outside_business_hours():
-    """Detecta conexiones SSH fuera del horario laboral (09:00-14:30)"""
+    """Detecta LOGIN EXITOSO SSH fuera del horario laboral (09:00-14:30)"""
+    global last_outside_hours_alert_time
     
     now = datetime.now()
     current_hour = now.hour
@@ -267,7 +281,7 @@ def check_outside_business_hours():
     
     time_from = now - timedelta(minutes=TIME_WINDOW_MINUTES)
     
-    # Buscar conexiones SSH (exitosas o fallidas)
+    # Buscar SOLO conexiones SSH EXITOSAS
     query = {
         "query": {
             "bool": {
@@ -281,14 +295,7 @@ def check_outside_business_hours():
                         }
                     },
                     {
-                        "bool": {
-                            "should": [
-                                {"match_phrase": {"message": "Accepted password"}},
-                                {"match_phrase": {"message": "Failed password"}},
-                                {"match_phrase": {"message": "Connection closed by authenticating user"}}
-                            ],
-                            "minimum_should_match": 1
-                        }
+                        "match_phrase": {"message": "Accepted password"}
                     },
                     {
                         "match": {"container.name": "victim-ssh"}
@@ -303,8 +310,16 @@ def check_outside_business_hours():
         hits_count = result['hits']['total']['value']
         
         if hits_count > 0:
-            print(f"[WARNING] Actividad SSH fuera de horario: {hits_count} eventos")
+            # COOLDOWN: Verificar si ya enviamos alerta recientemente
+            if last_outside_hours_alert_time is not None:
+                seconds_since_last = (now - last_outside_hours_alert_time).total_seconds()
+                if seconds_since_last < (COOLDOWN_MINUTES * 60):
+                    print(f"[INFO] Alerta de horario ya enviada hace {int(seconds_since_last)} segundos. Esperando...")
+                    return
+            
+            print(f"[WARNING] Login SSH exitoso fuera de horario: {hits_count} evento(s)")
             send_outside_hours_alert(hits_count, now, result['hits']['hits'][:5])
+            last_outside_hours_alert_time = now  # Actualizar cooldown
     
     except Exception as e:
         print(f"[ERROR] Error al verificar horario: {e}")
@@ -327,7 +342,7 @@ def send_outside_hours_alert(event_count, detection_time, events):
         'detection_time': detection_time.strftime('%Y-%m-%d %H:%M:%S'),
         'business_hours': '09:00 - 14:30',
         'timestamp': detection_time.isoformat(),
-        'description': f'Detectada actividad SSH fuera del horario laboral (09:00-14:30). {event_count} eventos registrados.',
+        'description': f'Detectado LOGIN EXITOSO SSH fuera del horario laboral (09:00-14:30). {event_count} acceso(s) registrado(s).',
         'sample_events': sample_events,
         'recommended_actions': [
             'Verificar si es actividad autorizada (mantenimiento, administrador)',

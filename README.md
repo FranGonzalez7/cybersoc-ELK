@@ -174,21 +174,23 @@ Una vez levantado el entorno, puedes acceder a:
 - Evaluar falsos positivos
 
 
-### 2. Actividad SSH Fuera de Horario
+### 2. Login SSH Exitoso Fuera de Horario Laboral
 
-**Descripción:** Detecta conexiones SSH fuera del horario laboral establecido.
+**Descripción:** Detecta accesos SSH **exitosos** realizados fuera del horario laboral establecido, lo que podría indicar acceso no autorizado o actividad sospechosa.
 
 **Criterios:**
-- Actividad SSH antes de 09:00 o después de 14:30
-- Incluye intentos fallidos y exitosos
+- Login SSH exitoso (Accepted password) antes de 09:00 o después de 14:30
+- Solo detecta autenticaciones exitosas, NO intentos fallidos
+- Ventana de detección: 5 minutos
 
 **Severidad:** MEDIUM
 
 **Acciones recomendadas:**
-- Verificar si es actividad autorizada
-- Identificar usuario y justificación
-- Revisar comandos ejecutados
-- Investigar si no está autorizado
+- Verificar si es actividad autorizada (mantenimiento programado, administrador)
+- Identificar usuario que realizó el acceso y justificación
+- Revisar qué comandos se ejecutaron durante la sesión
+- Contactar al usuario para confirmar que fue él
+- Si no está autorizado, investigar como posible compromiso de cuenta
 
 ---
 
@@ -200,7 +202,7 @@ Una vez levantado el entorno, puedes acceder a:
 # Acceder a Kali
 docker exec -it kali-attacker bash
 
-# Instalar herramientas (si no están)
+# Instalar herramientas
 apt-get update && apt-get install -y sshpass
 
 # Ejecutar ataque
@@ -217,7 +219,7 @@ done
 - Notificación enviada a Shuffle
 - Caso registrado en Shuffle con severidad HIGH
 
-## Ataque 2: Conexión Fuera de Horario
+### Ataque 2: Login Exitoso Fuera de Horario
 
 **Nota:** Este ataque solo generará alertas si se ejecuta **fuera del horario laboral** (antes de 09:00 o después de 14:30).
 
@@ -225,18 +227,21 @@ done
 # Acceder a Kali
 docker exec -it kali-attacker bash
 
-# Ejecutar conexión SSH (fuera de horario 09:00-14:30)
-for i in {1..5}; do
-  sshpass -p "wrongpassword$i" ssh -o StrictHostKeyChecking=no testuser@victim-ssh -p 2222 2>&1
-  sleep 1
+# Ejecutar LOGIN EXITOSO fuera de horario 09:00-14:30
+sshpass -p "Password123" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null testuser@victim-ssh -p 2222 "whoami && hostname && exit"
+
+# O para generar múltiples logins exitosos
+for i in {1..3}; do
+  sshpass -p "Password123" ssh -o StrictHostKeyChecking=no testuser@victim-ssh -p 2222 "echo 'Acceso $i' && exit"
+  sleep 2
 done
 ```
 
 **Resultado esperado:**
 - Alerta de severidad MEDIUM en Shuffle
-- Descripción: "Actividad SSH fuera del horario laboral"
+- Descripción: "Login SSH exitoso fuera del horario laboral"
 - Recomendación de verificar si es actividad autorizada
-
+- **Diferencia clave:** Solo detecta logins exitosos, NO intentos fallidos (esos los detecta la regla de Brute Force)
 
 ---
 
